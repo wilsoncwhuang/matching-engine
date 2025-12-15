@@ -1,0 +1,58 @@
+# 1. Basic Order Creation (GTC)
+new AAPL BUY LIMIT GTC 100 10
+new AAPL BUY LIMIT GTC 99 5
+new AAPL BUY LIMIT GTC 98 8
+
+# 2. Parital Matching
+new AAPL SELL LIMIT GTC 100 15
+# This will match: 10 @ 100 (order 1 fully matched) + 5 @ 99 (order 2 fully matched)
+
+# 3. Order Modification (Price and Quantity)
+# Modify order 3 (BUY 8 @ 98) -> BUY 20 @ 101
+modify 3 20 101
+
+# 4. Modified Order Rematching
+# Create a sell order that now matches the modified order
+new AAPL SELL LIMIT GTC 101 20
+# This will match order 3 (fully matched after modification)
+
+# 5. Order Cancelation
+# Cancel any remaining orders
+new AAPL BUY LIMIT GTC 95 5
+cancel 6
+
+# 6. IOC Order
+new AAPL BUY LIMIT IOC 105 25
+# Will execute as much as possible, remainder cancelled
+
+# 7. FOK Order
+new AAPL BUY LIMIT FOK 102 100
+# Will cancel if cannot fill entire 100 shares
+
+# 8. Market Order
+# Automatically becomes IOC and executes at best available price
+new AAPL BUY MARKET GTC 50
+
+# 9. Multiple Symbol
+new TSLA BUY LIMIT GTC 250 5
+new TSLA SELL LIMIT GTC 250 5
+
+# 10. Deeper Order Book
+new GOOGL BUY LIMIT GTC 2800 10
+new GOOGL BUY LIMIT GTC 2799 15
+new GOOGL SELL LIMIT GTC 2801 12
+new GOOGL SELL LIMIT GTC 2802 8
+
+# 11. Modify Then Cancel
+new MSFT BUY LIMIT GTC 400 20
+modify 15 50 410
+cancel 15
+
+# 12. Volume and Price Report
+# Final state for report generation
+new AMZN BUY LIMIT GTC 180 100
+new AMZN BUY LIMIT GTC 179 50
+new AMZN SELL LIMIT GTC 180 80
+new AMZN SELL LIMIT GTC 181 50
+
+quit

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matching Engine Demo</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Matching Engine Demo</h1>
+        </header>
+
+        <div class="controls">
+            <div class="symbol-selector">
+                <label>Ticker:</label>
+                <select id="symbolSelect" class="symbol-select">
+                    <option value="AAPL">AAPL</option>
+                    <option value="TSLA">TSLA</option>
+                    <option value="GOOGL">GOOGL</option>
+                    <option value="MSFT">MSFT</option>
+                </select>
+            </div>
+            <button id="stepBtn" class="btn btn-primary">Next</button>
+            <button id="autoBtn" class="btn btn-secondary">Auto</button>
+            <button id="resetBtn" class="btn btn-danger">Reset</button>
+            <div class="progress-info">
+                <span id="stepInfo">Steps: 0 / 0</span>
+                <span id="tradeInfo">Trades: 0</span>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Left Panel: Five-Level Order Book -->
+            <div class="panel orderbook-panel">
+                <h2><span id="symbolTitle">AAPL</span> Level Quote</h2>
+                <div class="orderbook-five-level">
+                    <table class="five-level-table">
+                        <thead>
+                            <tr>
+                                <th class="buy-header qty-header">Bid Volume</th>
+                                <th class="buy-header">Bid Price</th>
+                                <th class="sell-header">Ask Price</th>
+                                <th class="sell-header qty-header">Ask Volume</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="level-row" data-level="1">
+                                <td class="buy-qty-cell">
+                                    <div class="qty-bar-container">
+                                        <div class="qty-bar buy-bar" id="bid1-bar"></div>
+                                        <span class="qty-text" id="bid1-qty">---</span>
+                                    </div>
+                                </td>
+                                <td class="buy-price" id="bid1-price">---</td>
+                                <td class="sell-price" id="ask1-price">---</td>
+                                <td class="sell-qty-cell">
+                                    <div class="qty-bar-container reverse">
+                                        <span class="qty-text" id="ask1-qty">---</span>
+                                        <div class="qty-bar sell-bar" id="ask1-bar"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="level-row" data-level="2">
+                                <td class="buy-qty-cell">
+                                    <div class="qty-bar-container">
+                                        <div class="qty-bar buy-bar" id="bid2-bar"></div>
+                                        <span class="qty-text" id="bid2-qty">---</span>
+                                    </div>
+                                </td>
+                                <td class="buy-price" id="bid2-price">---</td>
+                                <td class="sell-price" id="ask2-price">---</td>
+                                <td class="sell-qty-cell">
+                                    <div class="qty-bar-container reverse">
+                                        <span class="qty-text" id="ask2-qty">---</span>
+                                        <div class="qty-bar sell-bar" id="ask2-bar"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="level-row" data-level="3">
+                                <td class="buy-qty-cell">
+                                    <div class="qty-bar-container">
+                                        <div class="qty-bar buy-bar" id="bid3-bar"></div>
+                                        <span class="qty-text" id="bid3-qty">---</span>
+                                    </div>
+                                </td>
+                                <td class="buy-price" id="bid3-price">---</td>
+                                <td class="sell-price" id="ask3-price">---</td>
+                                <td class="sell-qty-cell">
+                                    <div class="qty-bar-container reverse">
+                                        <span class="qty-text" id="ask3-qty">---</span>
+                                        <div class="qty-bar sell-bar" id="ask3-bar"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="level-row" data-level="4">
+                                <td class="buy-qty-cell">
+                                    <div class="qty-bar-container">
+                                        <div class="qty-bar buy-bar" id="bid4-bar"></div>
+                                        <span class="qty-text" id="bid4-qty">---</span>
+                                    </div>
+                                </td>
+                                <td class="buy-price" id="bid4-price">---</td>
+                                <td class="sell-price" id="ask4-price">---</td>
+                                <td class="sell-qty-cell">
+                                    <div class="qty-bar-container reverse">
+                                        <span class="qty-text" id="ask4-qty">---</span>
+                                        <div class="qty-bar sell-bar" id="ask4-bar"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="level-row" data-level="5">
+                                <td class="buy-qty-cell">
+                                    <div class="qty-bar-container">
+                                        <div class="qty-bar buy-bar" id="bid5-bar"></div>
+                                        <span class="qty-text" id="bid5-qty">---</span>
+                                    </div>
+                                </td>
+                                <td class="buy-price" id="bid5-price">---</td>
+                                <td class="sell-price" id="ask5-price">---</td>
+                                <td class="sell-qty-cell">
+                                    <div class="qty-bar-container reverse">
+                                        <span class="qty-text" id="ask5-qty">---</span>
+                                        <div class="qty-bar sell-bar" id="ask5-bar"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="total-row">
+                                <td class="total-label" colspan="2">
+                                    <span>Total</span>
+                                    <span id="totalBidQty">0</span>
+                                </td>
+                                <td colspan="2"></td>
+                                <td class="total-label" colspan="2">
+                                    <span>Total</span>
+                                    <span id="totalAskQty">0</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right Panel: Activity & Trades -->
+            <div class="panel activity-panel">
+                <div class="section">
+                    <h2>Current Command</h2>
+                    <div id="currentCommand" class="command-display">
+                        No command executed yet
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2>Recent Trades</h2>
+                    <div id="tradesContainer" class="trades-list">
+                        <div class="empty-state">No trades yet</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2>Trade Stats</h2>
+                    <div style="margin-top: 12px;">
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 13px; color: #888; margin-bottom: 4px;"><span style="font-weight: bold;">Total Volume:</span></div>
+                            <div style="font-size: 15px;" id="totalVolume">-</div>
+                        </div>
+                        <div style="font-size: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div>
+                                <div style="font-size: 13px; color: #888; margin-bottom: 4px;"><span style="font-weight: bold;">Avg Price:</span></div>
+                                <div id="avgPrice">-</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 13px; color: #888; margin-bottom: 4px;"><span style="font-weight: bold;">Min Price:</span></div>
+                                <div id="minPrice">-</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 13px; color: #888; margin-bottom: 4px;"><span style="font-weight: bold;">Max Price:</span></div>
+                                <div id="maxPrice">-</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 13px; color: #888; margin-bottom: 4px;"><span style="font-weight: bold;">Price Std:</span></div>
+                                <div id="priceStd">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Matching Engine v1.0 | Order Book Matching Engine Demo</p>
+        </footer>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
