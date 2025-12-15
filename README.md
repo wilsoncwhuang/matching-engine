@@ -1,4 +1,4 @@
-# Matching Engine - High-Performance Order Matching Engine
+# Matching Engine — Thread-Safe, Multi-Symbol Order Matching System
 
 ![C++](https://img.shields.io/badge/C%2B%2B-20-blue)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-success)
