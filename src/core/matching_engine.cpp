@@ -67,7 +67,6 @@ OrderId MatchingEngine::new_order(const NewOrderRequest& req)
         ordersRegistry_.emplace(id, std::move(ptr));
     }
 
-  
     std::shared_mutex* symMutex = get_or_create_symbol_mutex(req.symbol);
     std::unique_lock<std::shared_mutex> symwLock(*symMutex);
     
@@ -342,7 +341,7 @@ std::shared_mutex* MatchingEngine::get_or_create_symbol_mutex(const Symbol& symb
     auto it = symbolMutexes_.find(symbol);
     if (it != symbolMutexes_.end()) return it->second.get();
     
-    // Create new mutex for this symbol
+    // create new mutex for this symbol
     auto& ptr = symbolMutexes_[symbol];
     if (!ptr) ptr = std::make_unique<std::shared_mutex>();
     return ptr.get();
