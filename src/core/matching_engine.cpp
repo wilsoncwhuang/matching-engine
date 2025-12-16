@@ -38,14 +38,15 @@ orderbook::RejectReason MatchingEngine::validate_modify_order(const Order& order
 OrderId MatchingEngine::new_order(const NewOrderRequest& req) 
 {
     auto vr = validate_new_order(req);
-    if (vr != orderbook::RejectReason::None) {
-        return INVALID_ORDER_ID; 
-    }
+    if (vr != orderbook::RejectReason::None) return INVALID_ORDER_ID;
 
-    // create order
+    // 1) lock symbol FIRST (global lock order: symbol -> registry -> books)
+    std::unique_lock<std::shared_mutex> symwLock(*get_or_create_symbol_mutex(req.symbol));
+
+    // 2) create order
     auto ptr = std::make_unique<Order>();
     Order& o = *ptr;
-    o.orderId   = orderIdGenerator_.next();   
+    o.orderId   = orderIdGenerator_.next();
     o.symbol    = req.symbol;
     o.side      = req.side;
     o.type      = req.type;
@@ -56,44 +57,45 @@ OrderId MatchingEngine::new_order(const NewOrderRequest& req)
     o.filled    = 0;
     o.timestamp = clock_.now();
 
-    OrderId id = o.orderId;
-
     if (o.type == OrderType::Market && o.tif == TimeInForce::GTC) {
         o.tif = TimeInForce::IOC;
     }
 
+    const OrderId id = o.orderId;
+
+    // 3) put into registry under symbol lock (prevents races with cancel/modify/cleanup)
     {
         std::unique_lock<std::shared_mutex> regwLock(registryMutex_);
         ordersRegistry_.emplace(id, std::move(ptr));
     }
 
-    std::shared_mutex* symMutex = get_or_create_symbol_mutex(req.symbol);
-    std::unique_lock<std::shared_mutex> symwLock(*symMutex);
-    
+    // 4) submit to book (book mutations protected by symbol lock)
     OrderBook& book = get_or_create_book(o.symbol);
     std::vector<Trade> trades = book.submit_order(o);
-    
-    symwLock.unlock();
-    
-    // if order is not GTC and still has remaining, erase from registry
+
+    // 5) if order is not GTC and still has remaining, erase from registry
     if (o.tif != TimeInForce::GTC && o.remaining > 0) {
         std::unique_lock<std::shared_mutex> regwLock(registryMutex_);
         ordersRegistry_.erase(id);
     }
 
-    // process trades: assign tradeId, timestamp, store into tradeRepo, notify listeners
+    // 6) clean registry for fully-filled orders referenced by trades
     if (!trades.empty()) {
         std::unique_lock<std::shared_mutex> regwLock(registryMutex_);
-        clean_registry(trades);
+        clean_registry(trades); // assumes clean_registry expects registry lock held
     }
 
+    // 7) assign trade metadata
     if (!trades.empty()) {
-        auto ts = clock_.now();
+        const auto ts = clock_.now();
         for (auto& t : trades) {
             t.tradeId   = tradeIdGenerator_.next();
             t.timestamp = ts;
         }
     }
+
+    // 8) unlock symbol before callbacks/external sinks (optional but good to avoid re-entrancy deadlocks)
+    symwLock.unlock();
 
     if (!trades.empty()) {
         tradeRepo_.add_trades(trades);
@@ -105,55 +107,42 @@ OrderId MatchingEngine::new_order(const NewOrderRequest& req)
 
 bool MatchingEngine::cancel_order(OrderId orderId) 
 {
-    // map to symbol
+   // 1) find symbol (read-only)
     Symbol sym;
     {
         std::shared_lock<std::shared_mutex> regrLock(registryMutex_);
         auto it = ordersRegistry_.find(orderId);
-        if (it == ordersRegistry_.end()) {
-            return false;
-        }
+        if (it == ordersRegistry_.end()) return false;
         sym = it->second->symbol;
     }
 
+    // 2) lock symbol FIRST
     std::unique_lock<std::shared_mutex> symwLock(*get_or_create_symbol_mutex(sym));
 
-    // find order in registry
+    // 3) re-fetch the order pointer under registry lock (avoid dangling pointer)
     Order* optr = nullptr;
     {
-        std::unique_lock<std::shared_mutex> regrLock(registryMutex_);
+        std::shared_lock<std::shared_mutex> regrLock(registryMutex_);
         auto it = ordersRegistry_.find(orderId);
-        if (it == ordersRegistry_.end()) {
-            return false;
-        }
+        if (it == ordersRegistry_.end()) return false;
         optr = it->second.get();
     }
 
-    // get order book for this symbol and cancel
-    OrderBook* bptr = nullptr;
-    {
-        std::shared_lock<std::shared_mutex> bookrLock(booksMutex_);
-        auto bit = books_.find(sym);
-        if (bit == books_.end()) {
-            assert(false && "[matching engine] registry and books out of sync on cancel_order");
-            std::unique_lock<std::shared_mutex> regwLock(registryMutex_);
-            ordersRegistry_.erase(orderId); // gracefully handle
-            return false;
-        }
-        bptr = &bit->second;
-    }
+    // 4) cancel in book under symbol lock
+    OrderBook& book = get_or_create_book(sym);
+    bool removed = book.cancel_order(*optr);
 
-    bool removed = bptr->cancel_order(*optr);
-
+    // 5) update registry
     if (removed) {
         std::unique_lock<std::shared_mutex> regwLock(registryMutex_);
         ordersRegistry_.erase(orderId);
         return true;
-    } 
+    }
 
+    // Not removed: likely already fully filled / not on book anymore.
+    // Clean registry if remaining==0.
     {
-        assert(false && "[matching engine] registry and books out of sync on cancel_order");
-        std::unique_lock<std::shared_mutex> wlock(registryMutex_);
+        std::unique_lock<std::shared_mutex> regwLock(registryMutex_);
         auto it = ordersRegistry_.find(orderId);
         if (it != ordersRegistry_.end() && it->second->remaining == 0) {
             ordersRegistry_.erase(it);
@@ -164,52 +153,50 @@ bool MatchingEngine::cancel_order(OrderId orderId)
 
 bool MatchingEngine::modify_order(OrderId orderId, const ModifyOrderRequest& req) 
 {
-    // map to symbol
+    // 1) get symbol + snapshot for validation
     Symbol sym;
+    Order snapshot;
     {
         std::shared_lock<std::shared_mutex> regrLock(registryMutex_);
         auto it = ordersRegistry_.find(orderId);
-        if (it == ordersRegistry_.end()) {
-            return false;
-        }
+        if (it == ordersRegistry_.end()) return false;
         sym = it->second->symbol;
+        snapshot = *it->second;
     }
 
+    // validate using snapshot (no symbol lock yet)
+    auto vr = validate_modify_order(snapshot, req);
+    if (vr != orderbook::RejectReason::None) return false;
+
+    // 2) lock symbol FIRST
     std::unique_lock<std::shared_mutex> symwLock(*get_or_create_symbol_mutex(sym));
 
-    // find order in registry
+    // 3) re-fetch live pointer (order might have changed since snapshot)
     Order* optr = nullptr;
     {
-        std::unique_lock<std::shared_mutex> regrLock(registryMutex_);
+        std::shared_lock<std::shared_mutex> regrLock(registryMutex_);
         auto it = ordersRegistry_.find(orderId);
-        if (it == ordersRegistry_.end()) {
-            return false;
-        }
+        if (it == ordersRegistry_.end()) return false;
         optr = it->second.get();
     }
 
-    // validate modification against current order state
-    auto vr = validate_modify_order(*optr, req);
-    if (vr != orderbook::RejectReason::None) {
-        return false;
-    }
+    // Re-validate quickly against live state (optional but safer)
+    vr = validate_modify_order(*optr, req);
+    if (vr != orderbook::RejectReason::None) return false;
 
     OrderBook& book = get_or_create_book(sym);
 
-    // decide whether rematching is needed: price change crossing opposite best price, or market order
-    bool priceChanged = req.hasNewPrice;
-    Price newPrice = priceChanged ? req.newPrice : optr->price;
-    bool willRematch = false;
+    // 4) decide whether rematching is needed
+    const bool priceChanged = req.hasNewPrice;
+    const Price newPrice = priceChanged ? req.newPrice : optr->price;
 
-    if (optr->type == OrderType::Market) {
-        willRematch = true;
-    }
+    bool willRematch = (optr->type == OrderType::Market);
 
     if (!willRematch && priceChanged) {
         const OrderBookSide& opposite = (optr->side == Side::Buy) ? book.asks() : book.bids();
         const PriceLevel* best = opposite.best_level();
         if (best) {
-            double bestPrice = best->price();
+            const Price bestPrice = best->price();
             if (optr->side == Side::Buy) {
                 if (newPrice >= bestPrice) willRematch = true;
             } else {
@@ -218,47 +205,51 @@ bool MatchingEngine::modify_order(OrderId orderId, const ModifyOrderRequest& req
         }
     }
 
+    // 5) if no rematch needed, do in-book modify and return
     if (!willRematch) {
         return book.modify_order(*optr, req);
     }
 
-    // prepare a temporary Order copy to run FOK pre-check without mutating registry
+    // 6) build a temp order for FOK pre-check and new params
     Order temp = *optr;
-    temp.price = req.hasNewPrice ? req.newPrice : temp.price;
-    temp.qty = req.hasNewQuantity ? req.newQuantity : temp.qty;
+    if (req.hasNewPrice)    temp.price = req.newPrice;
+    if (req.hasNewQuantity) temp.qty   = req.newQuantity;
     temp.remaining = temp.qty - temp.filled;
 
     if (temp.tif == TimeInForce::FOK) {
         const OrderBookSide& opposite = (temp.side == Side::Buy) ? book.asks() : book.bids();
         const Quantity avail = opposite.available_quantity_for_order(temp);
         if (avail < temp.remaining) {
-            return false; 
+            return false;
         }
     }
 
-    // get the order book for this symbol and cancel the old order
-    bool removed = book.cancel_order(*optr);
+    // 7) cancel old order from book
+    const bool removed = book.cancel_order(*optr);
     if (!removed) {
-        assert(false && "[matching engine] registry and books out of sync on modify_order");
-        std::unique_lock<std::shared_mutex> wlock(registryMutex_);
+        // if already fully filled, remove from registry; otherwise treat as failure
+        std::unique_lock<std::shared_mutex> regwLock(registryMutex_);
         auto it = ordersRegistry_.find(orderId);
         if (it != ordersRegistry_.end() && it->second->remaining == 0) {
             ordersRegistry_.erase(it);
         }
         return false;
     }
-    
-    optr->price = temp.price;
-    optr->qty = temp.qty;
+
+    // 8) apply new fields to live order, resubmit
+    optr->price     = temp.price;
+    optr->qty       = temp.qty;
     optr->remaining = temp.remaining;
 
     std::vector<Trade> trades = book.submit_order(*optr);
 
+    // 9) clean registry for filled orders referenced by trades
     if (!trades.empty()) {
-        std::unique_lock<std::shared_mutex> wlock(registryMutex_);
-        clean_registry(trades); 
+        std::unique_lock<std::shared_mutex> regwLock(registryMutex_);
+        clean_registry(trades);
     }
 
+    // 10) assign trade metadata
     if (!trades.empty()) {
         const auto ts = clock_.now();
         for (auto& t : trades) {
@@ -267,6 +258,7 @@ bool MatchingEngine::modify_order(OrderId orderId, const ModifyOrderRequest& req
         }
     }
 
+    // 11) unlock symbol before external calls
     symwLock.unlock();
 
     if (!trades.empty()) {
