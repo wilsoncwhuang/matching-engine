@@ -44,8 +44,7 @@ public:
     Symbol get_symbol_by_order(OrderId orderId) const;
 
 private:
-    std::unordered_map<Symbol, OrderBook> books_;  
-
+    std::unordered_map<Symbol, std::unique_ptr<OrderBook>> books_;  
     std::unordered_map<OrderId, std::unique_ptr<Order>> ordersRegistry_;
 
     IClock&             clock_;
@@ -58,12 +57,12 @@ private:
     void on_trades(const std::vector<Trade>& trades);
     void clean_registry(const std::vector<Trade>& trades);
 
-    mutable std::shared_mutex booksMutex_;
-    mutable std::shared_mutex registryMutex_;
+    mutable std::mutex booksMutex_;
+    mutable std::mutex registryMutex_;
     mutable std::mutex symbolMutexesGuard_; 
-    std::unordered_map<Symbol, std::unique_ptr<std::shared_mutex>> symbolMutexes_;
+    std::unordered_map<Symbol, std::unique_ptr<std::mutex>> symbolMutexes_;
     mutable std::mutex listenersMutex_;
-    std::shared_mutex* get_or_create_symbol_mutex(const Symbol& symbol);  
+    std::mutex* get_or_create_symbol_mutex(const Symbol& symbol);  
 }; 
 
 }
