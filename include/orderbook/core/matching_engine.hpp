@@ -60,9 +60,10 @@ private:
 
     mutable std::shared_mutex booksMutex_;
     mutable std::shared_mutex registryMutex_;
+    mutable std::mutex symbolMutexesGuard_; 
     std::unordered_map<Symbol, std::unique_ptr<std::shared_mutex>> symbolMutexes_;
     mutable std::mutex listenersMutex_;
-    std::shared_mutex& get_or_create_symbol_mutex(const Symbol& symbol);
+    std::shared_mutex* get_or_create_symbol_mutex(const Symbol& symbol);  
 }; 
 
 }

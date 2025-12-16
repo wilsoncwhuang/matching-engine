@@ -42,8 +42,6 @@ OrderId MatchingEngine::new_order(const NewOrderRequest& req)
         return INVALID_ORDER_ID; 
     }
 
-    std::unique_lock<std::shared_mutex> symwLock(get_or_create_symbol_mutex(req.symbol));
-
     // create order
     auto ptr = std::make_unique<Order>();
     Order& o = *ptr;
@@ -69,9 +67,14 @@ OrderId MatchingEngine::new_order(const NewOrderRequest& req)
         ordersRegistry_.emplace(id, std::move(ptr));
     }
 
-    // get or create order book for this symbol and submit order
+  
+    std::shared_mutex* symMutex = get_or_create_symbol_mutex(req.symbol);
+    std::unique_lock<std::shared_mutex> symwLock(*symMutex);
+    
     OrderBook& book = get_or_create_book(o.symbol);
     std::vector<Trade> trades = book.submit_order(o);
+    
+    symwLock.unlock();
     
     // if order is not GTC and still has remaining, erase from registry
     if (o.tif != TimeInForce::GTC && o.remaining > 0) {
@@ -92,8 +95,6 @@ OrderId MatchingEngine::new_order(const NewOrderRequest& req)
             t.timestamp = ts;
         }
     }
-
-    symwLock.unlock();
 
     if (!trades.empty()) {
         tradeRepo_.add_trades(trades);
@@ -116,7 +117,7 @@ bool MatchingEngine::cancel_order(OrderId orderId)
         sym = it->second->symbol;
     }
 
-    std::unique_lock<std::shared_mutex> symwLock(get_or_create_symbol_mutex(sym));
+    std::unique_lock<std::shared_mutex> symwLock(*get_or_create_symbol_mutex(sym));
 
     // find order in registry
     Order* optr = nullptr;
@@ -175,7 +176,7 @@ bool MatchingEngine::modify_order(OrderId orderId, const ModifyOrderRequest& req
         sym = it->second->symbol;
     }
 
-    std::unique_lock<std::shared_mutex> symwLock(get_or_create_symbol_mutex(sym));
+    std::unique_lock<std::shared_mutex> symwLock(*get_or_create_symbol_mutex(sym));
 
     // find order in registry
     Order* optr = nullptr;
@@ -336,18 +337,15 @@ Symbol MatchingEngine::get_symbol_by_order(OrderId orderId) const {
     return "";
 }
 
-std::shared_mutex& MatchingEngine::get_or_create_symbol_mutex(const Symbol& symbol) {
-    {  
-        std::shared_lock<std::shared_mutex> rlock(booksMutex_);
-        auto it = symbolMutexes_.find(symbol);
-        if (it != symbolMutexes_.end()) return *it->second;
-    }
-    {   
-        std::unique_lock<std::shared_mutex> wlock(booksMutex_);
-        auto& ptr = symbolMutexes_[symbol];
-        if (!ptr) ptr = std::make_unique<std::shared_mutex>();
-        return *ptr;
-    }
+std::shared_mutex* MatchingEngine::get_or_create_symbol_mutex(const Symbol& symbol) {
+    std::lock_guard<std::mutex> lock(symbolMutexesGuard_);
+    auto it = symbolMutexes_.find(symbol);
+    if (it != symbolMutexes_.end()) return it->second.get();
+    
+    // Create new mutex for this symbol
+    auto& ptr = symbolMutexes_[symbol];
+    if (!ptr) ptr = std::make_unique<std::shared_mutex>();
+    return ptr.get();
 }
 
 } 
