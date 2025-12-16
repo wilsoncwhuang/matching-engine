@@ -21,7 +21,7 @@ A high-performance, thread-safe order matching engine implemented in C++20. Supp
 - **Market Order** - Automatically converted to IOC, fills at best available price
 
 ### Performance Features
-- **Thread-Safe** - Uses `std::shared_mutex` for multi-threaded support per symbol
+- **Thread-Safe** - Uses `std::mutex` for multi-threaded support per symbol
 - **Scalable Architecture** - Supports custom clock implementations and trade repositories
 
 ### Reporting System
