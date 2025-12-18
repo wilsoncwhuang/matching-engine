@@ -35,7 +35,8 @@ std::vector<Trade> OrderBook::submit_order(Order& order)
     if (order.remaining > 0) {
         if (order.tif == TimeInForce::GTC) {
             bookSide.add_order(&order);
-        } else {
+        } 
+        else {
             // IOC: do not add remaining to book; FOK shouldn't reach here when not fully filled
         }
     }

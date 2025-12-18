@@ -57,7 +57,6 @@ void OrderBookSide::match(Order& incoming, std::vector<Trade>& trades)
         if (it == priceLevels_.end()) break;
 
         double bestPrice = it->second.price();
-
         // check limit order price crossing 
         if (incoming.type == OrderType::Limit) {
             if (incoming.side == Side::Buy) {
@@ -93,7 +92,8 @@ void OrderBookSide::match(Order& incoming, std::vector<Trade>& trades)
         if (incoming.side == Side::Buy) {
             trade.buyOrderId = incoming.orderId;
             trade.sellOrderId = resting->orderId;
-        } else {
+        } 
+        else {
             trade.buyOrderId = resting->orderId;
             trade.sellOrderId = incoming.orderId;
         }
@@ -102,7 +102,8 @@ void OrderBookSide::match(Order& incoming, std::vector<Trade>& trades)
         if (resting->remaining == 0) {
             level.remove_top_order();
             clean_side(it);
-        } else {
+        } 
+        else {
             level.update_volume(matchQty);
         }
     }

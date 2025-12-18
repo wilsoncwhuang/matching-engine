@@ -54,11 +54,9 @@ OrderId MatchingEngine::new_order(const NewOrderRequest& req)
     o.remaining = req.quantity;
     o.filled    = 0;
     o.timestamp = clock_.now();
-
     if (o.type == OrderType::Market && o.tif == TimeInForce::GTC) {
         o.tif = TimeInForce::IOC;
     }
-
     const OrderId id = o.orderId;
 
     {
