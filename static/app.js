@@ -75,7 +75,7 @@ async function executeStep() {
         // If symbol changed, call loadState to get correct volume
         if (symbolChanged) {
             await loadState();
-            return;  // loadState 已更新所有數據
+            return;  
         }
         
         // Update trades
@@ -279,7 +279,7 @@ function startAutoPlay() {
     
     autoPlayInterval = setInterval(async () => {
         await executeStep();
-    }, 1500); // Execute every 1.5 seconds
+    }, 1500); 
 }
 
 function stopAutoPlay() {
